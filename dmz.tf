@@ -12,10 +12,15 @@ data "aws_vpc" "main" {
     id = "${var.main_vpc_id}"
 }
 
+data "template_file" "proxy" {
+    template = "${file("proxy.tpl")}"
+}
+
+
 resource "aws_subnet" "subnet1" {
     vpc_id            = "${aws_vpc.dmz.id}"
     cidr_block        = "${cidrsubnet(aws_vpc.dmz.cidr_block, 4, 1)}"
-    availability_zone = "${data.aws_availability_zones.available.names[0]}" 
+    availability_zone = "${data.aws_availability_zones.available.names[0]}"
 }
 
 
@@ -31,7 +36,7 @@ resource "aws_vpc_peering_connection" "peer_home" {
     auto_accept = true
 }
 
-resource "aws_route_table" "main" {
+resource "aws_route_table" "dmz" {
     vpc_id = "${aws_vpc.dmz.id}"
     route {
         cidr_block                = "${data.aws_vpc.main.cidr_block}"
@@ -41,12 +46,12 @@ resource "aws_route_table" "main" {
 
 resource "aws_route_table_association" "a" {
     subnet_id = "${aws_subnet.subnet1.id}"
-    route_table_id = "${aws_route_table.main.id}"
+    route_table_id = "${aws_route_table.dmz.id}"
 }
 
 resource "aws_route_table_association" "b" {
     subnet_id = "${aws_subnet.subnet2.id}"
-    route_table_id = "${aws_route_table.main.id}"
+    route_table_id = "${aws_route_table.dmz.id}"
 }
 
 resource "aws_security_group" "allow_all" {
@@ -71,10 +76,12 @@ resource "aws_security_group" "allow_all" {
 resource "aws_instance" "dmz_proxy1" {
     ami                    = "ami-c58c1dd3"
     instance_type          = "t2.micro"
+    key_name               = "memsqlcloud"
     vpc_security_group_ids = [ "${aws_security_group.allow_all.id}" ]
     subnet_id              = "${aws_subnet.subnet1.id}"
     source_dest_check      = false
     private_ip             = "${cidrhost(aws_subnet.subnet1.cidr_block, 5)}"
+    user_data              = "${data.template_file.proxy.rendered}"
     tags {
        Name = "DMZ PROXY 1"
     }
